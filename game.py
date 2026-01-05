@@ -54,21 +54,6 @@ class Game:
         quit_rect = quit_text.get_rect(center=(self.screenSize[0] // 2, self.screenSize[1] // 2 + 80))
         self.screen.blit(quit_text, quit_rect)
 
-    async def waitForGameOverChoice(self):
-        # Wait for player choice after game over
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return 'quit'
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r:
-                        return 'restart'
-                    elif event.key == pygame.K_m:
-                        return 'menu'
-                    elif event.key == pygame.K_q:
-                        return 'quit'
-            await asyncio.sleep(0)
-
     async def run(self, use_solver=False, solver_delay=0.5):
         self.screen = pygame.display.set_mode(self.screenSize)
         pygame.display.set_caption("Minesweeper")
@@ -84,47 +69,57 @@ class Game:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    running = False
-                if event.type == pygame.MOUSEBUTTONDOWN and not use_solver and not game_over:
+                    return 'quit'
+
+                # Input handling when game is OVER
+                if game_over and event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        return 'restart'
+                    elif event.key == pygame.K_m:
+                        return 'menu'
+                    elif event.key == pygame.K_q:
+                        return 'quit'
+
+                # Input handling when game is RUNNING
+                if not game_over and event.type == pygame.MOUSEBUTTONDOWN and not use_solver:
                     pos = pygame.mouse.get_pos()
                     rightClick = pygame.mouse.get_pressed()[2]
                     self.handleClick(pos, rightClick)
-                elif event.type == pygame.MOUSEBUTTONDOWN and use_solver and self.board.first and not game_over:
+                elif not game_over and event.type == pygame.MOUSEBUTTONDOWN and use_solver and self.board.first:
+                    # User needs to make the first click for AI
                     pos = pygame.mouse.get_pos()
                     rightClick = pygame.mouse.get_pressed()[2]
                     self.handleClick(pos, rightClick)
 
-            # AI solver with timing
-            if (use_solver and solver and not self.board.getWon() and
-                    not self.board.getLost() and not self.board.first and
-                    current_time - last_solver_time > solver_delay * 1000 and not game_over):
+            # --- Game Logic ---
+            if not game_over:
+                # AI solver with timing
+                if (use_solver and solver and not self.board.first and
+                        current_time - last_solver_time > solver_delay * 1000):
 
-                moves_made = solver.move()
-                if moves_made:
-                    last_solver_time = current_time
+                    moves_made = solver.move()
+                    if moves_made:
+                        last_solver_time = current_time
 
-            # Check for game end conditions
-            if (self.board.getLost() or self.board.getWon()) and not game_over:
-                game_over = True
-                if self.board.getLost():
-                    self.playLoseSound()
-                else:
-                    self.playWinSound()
+                # Check for game end conditions
+                if self.board.getLost() or self.board.getWon():
+                    game_over = True
+                    if self.board.getLost():
+                        self.playLoseSound()
+                    else:
+                        self.playWinSound()
 
-            # Draw the game
+            # --- Drawing ---
+            # 1. Always draw the board
+            self.draw(self.board.getLost())
+            self.drawUI()
+
+            # 2. If game over, draw the overlay on top
             if game_over:
-                self.draw(self.board.getLost())
-                self.drawUI()
                 self.displayGameOverMenu(self.board.getWon())
-                pygame.display.flip()
 
-                # Wait for user choice
-                choice = await self.waitForGameOverChoice()
-                return choice  # Return the choice to main loop
-            else:
-                self.draw(self.board.getLost())
-                self.drawUI()
-                pygame.display.flip()
+            # 3. Flip the display (Essential to prevent freezing)
+            pygame.display.flip()
 
             clock.tick(60)
             await asyncio.sleep(0)
@@ -182,28 +177,6 @@ class Game:
 
         piece = self.board.getPiece((row, col))
         self.board.handleClick(piece, rightClick)
-
-    def displayWinMessage(self):
-        overlay = pygame.Surface(self.screenSize)
-        overlay.set_alpha(128)
-        overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
-
-        font = pygame.font.Font(None, 74)
-        text = font.render("You Won!", True, (0, 255, 0))
-        text_rect = text.get_rect(center=(self.screenSize[0] // 2, self.screenSize[1] // 2))
-        self.screen.blit(text, text_rect)
-
-    def displayLoseMessage(self):
-        overlay = pygame.Surface(self.screenSize)
-        overlay.set_alpha(128)
-        overlay.fill((0, 0, 0))
-        self.screen.blit(overlay, (0, 0))
-
-        font = pygame.font.Font(None, 74)
-        text = font.render("Game Over!", True, (255, 0, 0))
-        text_rect = text.get_rect(center=(self.screenSize[0] // 2, self.screenSize[1] // 2))
-        self.screen.blit(text, text_rect)
 
     def playWinSound(self):
         try:
